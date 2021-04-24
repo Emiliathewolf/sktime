@@ -55,10 +55,10 @@ def make_graphs(querydata, scaleddata, saveloc = None, name = None):
     fig.suptitle('Scaled vs Unscaled Based on Longest Length')
     #BEFORE 5 aand 6 ideal
     ax1.set_title('Unscaled')
-    ax1.plot(querydata[5])
+    ax1.plot(querydata[6])
     #AFTER
     ax2.set_title('Scaled')
-    ax2.plot(scaleddata[5])
+    ax2.plot(scaleddata[6])
 
     if len(querydata) > len(scaleddata):
         ax2.sharex(ax1)

@@ -25,6 +25,7 @@ from sklearn.utils.validation import check_random_state
 from sktime.utils.slope_and_trend import _slope
 from sktime.utils.validation.panel import check_X
 from sktime.utils.validation.panel import check_X_y
+from sktime.utils.validation.panel import check_consistent_length
 
 
 class BaseTimeSeriesForest:
@@ -76,36 +77,66 @@ class BaseTimeSeriesForest:
             classification. TSF has no bespoke method for multivariate
             classification as yet.
         y : array-like, shape =  [n_instances]    The class labels.
+        unequal : bool
+            Flag to adjust the fitting to account for unequal length series
 
         Returns
         -------
         self : object
         """
-        X, y = check_X_y(
-            X,
-            y,
-            enforce_univariate=not self.capabilities["multivariate"],
-            coerce_to_numpy=True,
-        )
-        X = X.squeeze(1)
-        n_instances, self.series_length = X.shape
 
-        rng = check_random_state(self.random_state)
+        #Try except for now
+        try:
+            X, y = check_X_y(
+                X,
+                y,
+                enforce_univariate=not self.capabilities["multivariate"],
+                coerce_to_numpy=True,
+            )
+            X = X.squeeze(1)
+            #Number of instances, length of each series
+            n_instances, self.series_length = X.shape
 
-        self.n_classes = np.unique(y).shape[0]
 
-        self.classes_ = class_distribution(np.asarray(y).reshape(-1, 1))[0][0]
-        self.n_intervals = int(math.sqrt(self.series_length))
-        if self.n_intervals == 0:
-            self.n_intervals = 1
-        if self.series_length < self.min_interval:
-            self.min_interval = self.series_length
 
-        self.intervals_ = [
-            _get_intervals(self.n_intervals, self.min_interval, self.series_length, rng)
-            for _ in range(self.n_estimators)
-        ]
+            rng = check_random_state(self.random_state)
 
+            self.n_classes = np.unique(y).shape[0]
+
+            self.classes_ = class_distribution(np.asarray(y).reshape(-1, 1))[0][0]
+            self.n_intervals = int(math.sqrt(self.series_length))
+            if self.n_intervals == 0:
+                self.n_intervals = 1
+            if self.series_length < self.min_interval:
+                self.min_interval = self.series_length
+
+            self.intervals_ = [
+                _get_intervals(self.n_intervals, self.min_interval, self.series_length, rng)
+                for _ in range(self.n_estimators)
+            ]
+
+        except ValueError:
+            print("Entering handling for unequal")
+            n_instances = X.shape[0]
+            print(n_instances)
+            rng = check_random_state(self.random_state)
+            self.classes_ = class_distribution(np.asarray(y).reshape(-1, 1))[0][0]
+
+            self.intervals_ = []
+            for i in range(n_instances):
+                series_length = X.iloc[i][0].size
+                #print("Length X at index 100: ", series_length)
+                n_intervals = int(math.sqrt(series_length))
+                if n_intervals == 0:
+                    n_intervals = 1
+                if series_length < self.min_interval:
+                    self.min_interval = series_length
+                self.intervals_.append(_get_intervals(n_intervals, self.min_interval, series_length, rng))
+            # Adjust it to take series length for each individual series
+
+            #Lets try get away with sampling each array seperatly, and not in bulk
+            # e.g. series length for each and every time series in teh file, not just once
+        #Adjust for unequal length
         self.estimators_ = Parallel(n_jobs=self.n_jobs)(
             delayed(_fit_estimator)(
                 X,

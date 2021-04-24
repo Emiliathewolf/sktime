@@ -305,6 +305,7 @@ def run_experiment(
     if build_test:
         # TO DO : use sklearn CV
         start = int(round(time.time() * 1000))
+        #TRUE FOR NOW, DO DYNAMICALLY IN FUTURE
         classifier.fit(trainX, trainY)
         build_time = int(round(time.time() * 1000)) - start
         start = int(round(time.time() * 1000))
@@ -657,6 +658,10 @@ benchmark_datasets = [
     "Yoga",
 ]
 
+benchmark_datasets = [
+    "ArrowHead",
+    "AllGestureWiimoteX"
+]
 
 if __name__ == "__main__":
     """
@@ -680,12 +685,17 @@ if __name__ == "__main__":
         )
     else:  # Local run
         print(" Local Run")
-        data_dir = "Z:/ArchiveData/Univariate_ts/"
-        results_dir = "Z:/Results Working Area/DistanceBased/sktime/"
-        dataset = "ArrowHead"
+        #data_dir = "/gpfs/home/tjd17qcu/sktime/sktime/datasets/data"
+        data_dir = "C:/Users/danie/Documents/uni work/third year/sktime/sktime/datasets/data/"
+        results_dir = "C:/Users/danie/Documents/uni work/third year/result/"
+        dataset = "AllGestureWiimoteX"
         trainX, trainY = load_ts(data_dir + dataset + "/" + dataset + "_TRAIN.ts")
         testX, testY = load_ts(data_dir + dataset + "/" + dataset + "_TEST.ts")
-        classifier = "1NN-MSM"
+        adjusted = trainX.values.tolist()
+        # X is an 2d array where each 1st level array represents a row in the .ts file
+        #print(adjusted)
+        #exit()
+        classifier = "tsf"
         resample = 0
         #         for i in range(0, len(univariate_datasets)):
         #             dataset = univariate_datasets[i]
