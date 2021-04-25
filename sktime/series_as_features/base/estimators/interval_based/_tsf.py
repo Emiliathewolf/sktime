@@ -22,6 +22,8 @@ from sklearn.base import clone
 from sklearn.utils.multiclass import class_distribution
 from sklearn.utils.validation import check_random_state
 
+from scipy.spatial.distance import pdist
+
 from sktime.utils.slope_and_trend import _slope
 from sktime.utils.validation.panel import check_X
 from sktime.utils.validation.panel import check_X_y
@@ -42,7 +44,7 @@ class BaseTimeSeriesForest:
         self,
         min_interval=3,
         n_estimators=200,
-        n_jobs=1,
+        n_jobs=8,
         random_state=None,
     ):
         super(BaseTimeSeriesForest, self).__init__(
@@ -61,6 +63,9 @@ class BaseTimeSeriesForest:
         self.estimators_ = []
         self.intervals_ = []
         self.classes_ = []
+
+        #Handling unequal length series
+        self.unequal = False
 
         # We need to add is-fitted state when inheriting from scikit-learn
         self._is_fitted = False
@@ -84,6 +89,8 @@ class BaseTimeSeriesForest:
         -------
         self : object
         """
+        if X.size < self.n_estimators:
+            self.n_estimators = X.size
 
         #Try except for now
         try:
@@ -114,16 +121,18 @@ class BaseTimeSeriesForest:
                 _get_intervals(self.n_intervals, self.min_interval, self.series_length, rng)
                 for _ in range(self.n_estimators)
             ]
+            self.unequal = False
 
+        # CHANGE THIS TO HANDLE SPECIFIC ERROR
         except ValueError:
-            print("Entering handling for unequal")
+            self.unequal = True
             n_instances = X.shape[0]
-            print(n_instances)
             rng = check_random_state(self.random_state)
+            self.n_classes = np.unique(y).shape[0]
             self.classes_ = class_distribution(np.asarray(y).reshape(-1, 1))[0][0]
 
             self.intervals_ = []
-            for i in range(n_instances):
+            for i in range(self.n_estimators):
                 series_length = X.iloc[i][0].size
                 #print("Length X at index 100: ", series_length)
                 n_intervals = int(math.sqrt(series_length))
@@ -144,10 +153,10 @@ class BaseTimeSeriesForest:
                 self.base_estimator,
                 self.intervals_[i],
                 self.random_state,
+                self.unequal
             )
             for i in range(self.n_estimators)
         )
-
         self._is_fitted = True
         return self
 
@@ -188,29 +197,45 @@ class BaseTimeSeriesForest:
             Predicted probabilities
         """
         self.check_is_fitted()
-        X = check_X(X, enforce_univariate=True, coerce_to_numpy=True)
-        X = X.squeeze(1)
+        if self.unequal == False:
+            X = check_X(X, enforce_univariate=True, coerce_to_numpy=True)
+            X = X.squeeze(1)
+            _, series_length = X.shape
+            if series_length != self.series_length:
+                raise TypeError(
+                    " ERROR number of attributes in the train does not match "
+                    "that in the test data"
+                )
 
-        _, series_length = X.shape
-        if series_length != self.series_length:
-            raise TypeError(
-                " ERROR number of attributes in the train does not match "
-                "that in the test data"
-            )
         y_probas = Parallel(n_jobs=self.n_jobs)(
             delayed(_predict_proba_for_estimator)(
-                X, self.estimators_[i], self.intervals_[i]
+                X, self.estimators_[i], self.intervals_[i], self.unequal
             )
             for i in range(self.n_estimators)
         )
-
+        np.ones(self.n_classes) * self.n_estimators
         output = np.sum(y_probas, axis=0) / (
             np.ones(self.n_classes) * self.n_estimators
         )
+        #output = np.sum(y_probas, axis=0) / (
+        #    np.ones(self.n_classes) * self.n_estimators
+        #)
         return output
 
 
-def _transform(X, intervals):
+def us(query, scale_to, min = 0, max = None):
+    n = len(query)
+    m = scale_to
+
+    QP = []
+    # p / n = scaling factor
+    if max is None:
+        max = m
+    for j in range(min, max):
+        QP.append(query[int(j*(n/m))])
+    return QP
+
+def _transform(X, intervals, unequal):
     """Compute the mean, standard deviation and slope for given intervals
     of input data X.
 
@@ -225,14 +250,72 @@ def _transform(X, intervals):
     n_intervals, _ = intervals.shape
     transformed_x = np.empty(shape=(3 * n_intervals, n_instances), dtype=np.float32)
     for j in range(n_intervals):
-        X_slice = X[:, intervals[j][0] : intervals[j][1]]
-        means = np.mean(X_slice, axis=1)
+        #Please set multicore before you do this, otherwise it will take 2+ minutes
+        if unequal == True:
+            best_match_value = float('inf')
+            best_length = None
+
+            #We don't want to waste time checking out all sizes, so set some upper and lower bounds for ourselves
+            min_length = int(intervals[j][1]) # start
+            max_length = int((min_length * 1.1) + 1) # up to 10% over as any higher is unlikely to be good match
+
+
+            #work out ratio here to avoid nabbing the end all the time
+            #longest length is
+            longest_length = 0
+            for i in range(X.size):
+                if X.iloc[i][0].size > longest_length:
+                    longest_length = X.iloc[i][0].size
+
+            #ratio working out
+            low_diff = intervals[j][0] / longest_length
+
+            best_X_scale = []
+
+
+            # LB_Keogh = sqrt(sum([[Q > U].* [Q-U]; [Q < L].* [L-Q]].^2));
+            #C = X
+            # n query length, m candidate length
+
+            # We want the scale length to be greater than the min length to ensure we're not always picking the end
+            for s in range(min_length, int(min_length + 1)):
+                # Scale
+                scaled = np.empty(shape=(int(n_instances), int(intervals[j][1] - intervals[j][0])))
+                curX = None
+                lenX = None
+
+                lower_interval = int(s * low_diff)
+                upper_interval = int(lower_interval + (intervals[j][1] - intervals[j][0]))
+                # As we don't scale the interval size itself, sometimes it may run over
+                if upper_interval > longest_length:
+                    upper_interval = upper_interval - (upper_interval - longest_length) - 1
+                    lower_interval = lower_interval - (upper_interval - longest_length) - 1
+                for i in range(n_instances):
+                    # Append the scaled and sliced result
+                    curX = X.iloc[i][0]
+                    lenX = len(curX)
+                    for o in range(lower_interval, upper_interval):
+                        scaled[i] = (curX[int(o * (lenX / s))])
+
+                ED = sum(pdist(np.array(scaled), 'sqeuclidean'))
+                if ED < best_match_value:
+                    best_match_value = ED
+                    best_X_scale = scaled
+
+            X_slice = best_X_scale
+            X_slice = np.array(X_slice)
+        else:
+            X_slice = X[:, intervals[j][0] : intervals[j][1]]
+
+        try:
+            means = np.mean(X_slice, axis=1)
+        except:
+            print("test")
         std_dev = np.std(X_slice, axis=1)
         slope = _slope(X_slice, axis=1)
         transformed_x[3 * j] = means
         transformed_x[3 * j + 1] = std_dev
         transformed_x[3 * j + 2] = slope
-
     return transformed_x.T
 
 
@@ -250,7 +333,8 @@ def _get_intervals(n_intervals, min_interval, series_length, rng):
     return intervals
 
 
-def _fit_estimator(X, y, base_estimator, intervals, random_state=None):
+
+def _fit_estimator(X, y, base_estimator, intervals, random_state=None, unequal = False):
     """
     Fit an estimator - a clone of base_estimator - on input data (X, y)
     transformed using the randomly generated intervals.
@@ -259,14 +343,14 @@ def _fit_estimator(X, y, base_estimator, intervals, random_state=None):
     estimator = clone(base_estimator)
     estimator.set_params(random_state=random_state)
 
-    transformed_x = _transform(X, intervals)
+    transformed_x = _transform(X, intervals, unequal)
     return estimator.fit(transformed_x, y)
 
 
-def _predict_proba_for_estimator(X, estimator, intervals):
+def _predict_proba_for_estimator(X, estimator, intervals, unequal):
     """
     Find probability estimates for each class for all cases in X using
     given estimator and intervals.
     """
-    transformed_x = _transform(X, intervals)
+    transformed_x = _transform(X, intervals, unequal)
     return estimator.predict_proba(transformed_x)

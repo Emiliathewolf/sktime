@@ -56,6 +56,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.model_selection import cross_val_predict
 from sktime.utils.data_io import load_from_tsfile_to_dataframe as load_ts
 import sktime.datasets.tsc_dataset_names as dataset_lists
+from sktime.datasets.base import load_UCR_UEA_dataset
 
 __author__ = ["Tony Bagnall"]
 
@@ -305,8 +306,9 @@ def run_experiment(
     if build_test:
         # TO DO : use sklearn CV
         start = int(round(time.time() * 1000))
-        #TRUE FOR NOW, DO DYNAMICALLY IN FUTURE
+        print("Fitting Starting")
         classifier.fit(trainX, trainY)
+        print("Fitting Done")
         build_time = int(round(time.time() * 1000)) - start
         start = int(round(time.time() * 1000))
         probs = classifier.predict_proba(testX)
@@ -659,8 +661,18 @@ benchmark_datasets = [
 ]
 
 benchmark_datasets = [
-    "ArrowHead",
-    "AllGestureWiimoteX"
+    #"ArrowHead",
+    #"AllGestureWiimoteX",
+    #"AllGestureWiimoteY",
+    #"AllGestureWiimoteZ",
+    #"GestureMidAirD1",
+    #"GestureMidAirD2",
+    #"GestureMidAirD3",
+    "GesturePebbleZ1",
+    "GesturePebbleZ2",
+    "PickupGestureWiimoteZ",
+    "PLAID",
+    "ShakeGestureWiimoteZ",
 ]
 
 if __name__ == "__main__":
@@ -689,6 +701,10 @@ if __name__ == "__main__":
         data_dir = "C:/Users/danie/Documents/uni work/third year/sktime/sktime/datasets/data/"
         results_dir = "C:/Users/danie/Documents/uni work/third year/result/"
         dataset = "AllGestureWiimoteX"
+        #Download datasets
+        #for datasets in benchmark_datasets:
+        #    print(datasets)
+        #     load_UCR_UEA_dataset(datasets)
         trainX, trainY = load_ts(data_dir + dataset + "/" + dataset + "_TRAIN.ts")
         testX, testY = load_ts(data_dir + dataset + "/" + dataset + "_TEST.ts")
         adjusted = trainX.values.tolist()
