@@ -217,15 +217,19 @@ def us(query, p):
     for i in range(n):
         curQ = query.iloc[i][0]
         for j in range(p):
-            QP[i][j] = (curQ[int(j * (n / p))])
+            try:
+                QP[i][j] = (curQ[int(j * (len(curQ) / p))])
+            except Exception as e:
+                print(e)
     return QP
 
-# Yes I know sklearn has this, no I don't care
+# Yes I know sklearn has th
+# is, no I don't care
 def euclidian_distances(q):
     ED = sum(pdist(np.array(q), 'sqeuclidean'))
     return ED
 
-def compare_scaling(query, min = 1, max = None):
+def compare_scaling(query, min = None, max = None):
     best_match_value = float('inf')
     best_match = None
 
@@ -234,15 +238,26 @@ def compare_scaling(query, min = 1, max = None):
         for i in range(query.size):
             if query.iloc[i][0].size > max:
                 max = query.iloc[i][0].size
+
+    if min == None:
+        min = 0
+        for i in range(query.size):
+            if query.iloc[i][0].size < min:
+                min = query.iloc[i][0].size
     n = min
     m = max
+    #Parallel probs best
     for p in range(n, m):
         QP = us(query, p)
         dist = euclidian_distances(QP)  # Compare like sizes
         if dist < best_match_value:
             best_match_value = dist
             best_match = QP
-    return np.array(best_match)
+    #Reshuffle so it fits the required structure
+    ret = []
+    for i in range(query.size):
+        ret.append([best_match[i]])
+    return pd.DataFrame(ret)
 
 def run_experiment(
     problem_path,
@@ -321,9 +336,10 @@ def run_experiment(
     trainX, trainY = load_ts(problem_path + dataset + "/" + dataset + "_TRAIN" + format)
     testX, testY = load_ts(problem_path + dataset + "/" + dataset + "_TEST" + format)
 
-    #Uniform scalining 'ere
-    #newX = compare_scaling(trainX)
-    #exit()
+    #Uniform scaling
+    trainX = compare_scaling(trainX,100,102)
+    testX = compare_scaling(testX,100,102)
+
 
     if resampleID != 0:
         # allLabels = np.concatenate((trainY, testY), axis = None)
@@ -347,9 +363,7 @@ def run_experiment(
     if build_test:
         # TO DO : use sklearn CV
         start = int(round(time.time() * 1000))
-        print("Fitting Starting")
         classifier.fit(trainX, trainY)
-        print("Fitting Done")
         build_time = int(round(time.time() * 1000)) - start
         start = int(round(time.time() * 1000))
         probs = classifier.predict_proba(testX)
@@ -702,18 +716,18 @@ benchmark_datasets = [
 ]
 
 benchmark_datasets = [
-    "ArrowHead",
+    #"ArrowHead",
     "AllGestureWiimoteX",
     "AllGestureWiimoteY",
     "AllGestureWiimoteZ",
     "GestureMidAirD1",
     "GestureMidAirD2",
     "GestureMidAirD3",
-    #"GesturePebbleZ1",
-    #"GesturePebbleZ2",
-    #"PickupGestureWiimoteZ",
-    #"PLAID",
-    #"ShakeGestureWiimoteZ",
+    "GesturePebbleZ1",
+    "GesturePebbleZ2",
+    "PickupGestureWiimoteZ",
+    "PLAID",
+    "ShakeGestureWiimoteZ",
 ]
 
 if __name__ == "__main__":
