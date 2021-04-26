@@ -90,8 +90,7 @@ class BaseTimeSeriesForest:
         self : object
         """
         # Make this only for unequal, but try get around this
-        if X.size < self.n_estimators:
-            self.n_estimators = X.size
+
 
         #Try except for now
         try:
@@ -134,19 +133,14 @@ class BaseTimeSeriesForest:
 
             self.intervals_ = []
             for i in range(self.n_estimators):
-                series_length = X.iloc[i][0].size
-                #print("Length X at index 100: ", series_length)
+                series_length = X.iloc[i % X.size][0].size
                 n_intervals = int(math.sqrt(series_length))
                 if n_intervals == 0:
                     n_intervals = 1
                 if series_length < self.min_interval:
                     self.min_interval = series_length
                 self.intervals_.append(_get_intervals(n_intervals, self.min_interval, series_length, rng))
-            # Adjust it to take series length for each individual series
 
-            #Lets try get away with sampling each array seperatly, and not in bulk
-            # e.g. series length for each and every time series in teh file, not just once
-        #Adjust for unequal length
         self.estimators_ = Parallel(n_jobs=self.n_jobs)(
             delayed(_fit_estimator)(
                 X,
