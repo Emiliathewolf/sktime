@@ -58,6 +58,8 @@ from sktime.utils.data_io import load_from_tsfile_to_dataframe as load_ts
 import sktime.datasets.tsc_dataset_names as dataset_lists
 from sktime.datasets.base import load_UCR_UEA_dataset
 
+from scipy.spatial.distance import pdist
+
 __author__ = ["Tony Bagnall"]
 
 """ Prototype mechanism for testing classifiers on the UCR format. This mirrors the
@@ -208,6 +210,40 @@ def stratified_resample(X_train, y_train, X_test, y_test, random_state):
     return X_train, y_train, X_test, y_test
 
 
+def us(query, p):
+    n = query.size
+    QP = np.empty(shape=(n, p))
+    # p / n = scaling factor
+    for i in range(n):
+        curQ = query.iloc[i][0]
+        for j in range(p):
+            QP[i][j] = (curQ[int(j * (n / p))])
+    return QP
+
+# Yes I know sklearn has this, no I don't care
+def euclidian_distances(q):
+    ED = sum(pdist(np.array(q), 'sqeuclidean'))
+    return ED
+
+def compare_scaling(query, min = 1, max = None):
+    best_match_value = float('inf')
+    best_match = None
+
+    if max == None:
+        max = 0
+        for i in range(query.size):
+            if query.iloc[i][0].size > max:
+                max = query.iloc[i][0].size
+    n = min
+    m = max
+    for p in range(n, m):
+        QP = us(query, p)
+        dist = euclidian_distances(QP)  # Compare like sizes
+        if dist < best_match_value:
+            best_match_value = dist
+            best_match = QP
+    return np.array(best_match)
+
 def run_experiment(
     problem_path,
     results_path,
@@ -284,6 +320,11 @@ def run_experiment(
     # currently only works with .ts
     trainX, trainY = load_ts(problem_path + dataset + "/" + dataset + "_TRAIN" + format)
     testX, testY = load_ts(problem_path + dataset + "/" + dataset + "_TEST" + format)
+
+    #Uniform scalining 'ere
+    #newX = compare_scaling(trainX)
+    #exit()
+
     if resampleID != 0:
         # allLabels = np.concatenate((trainY, testY), axis = None)
         # allData = pd.concat([trainX, testX])
@@ -668,11 +709,11 @@ benchmark_datasets = [
     "GestureMidAirD1",
     "GestureMidAirD2",
     "GestureMidAirD3",
-    "GesturePebbleZ1",
-    "GesturePebbleZ2",
-    "PickupGestureWiimoteZ",
-    "PLAID",
-    "ShakeGestureWiimoteZ",
+    #"GesturePebbleZ1",
+    #"GesturePebbleZ2",
+    #"PickupGestureWiimoteZ",
+    #"PLAID",
+    #"ShakeGestureWiimoteZ",
 ]
 
 if __name__ == "__main__":

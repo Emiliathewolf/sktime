@@ -212,23 +212,8 @@ class BaseTimeSeriesForest:
         output = np.sum(y_probas, axis=0) / (
             np.ones(self.n_classes) * self.n_estimators
         )
-        #output = np.sum(y_probas, axis=0) / (
-        #    np.ones(self.n_classes) * self.n_estimators
-        #)
         return output
 
-
-def us(query, scale_to, min = 0, max = None):
-    n = len(query)
-    m = scale_to
-
-    QP = []
-    # p / n = scaling factor
-    if max is None:
-        max = m
-    for j in range(min, max):
-        QP.append(query[int(j*(n/m))])
-    return QP
 
 def _transform(X, intervals, unequal):
     """Compute the mean, standard deviation and slope for given intervals
@@ -281,24 +266,26 @@ def _transform(X, intervals, unequal):
             # We want the scale length to be greater than the min length to ensure we're not always picking the end
             for s in range(min_length, int(min_length + 1)):
                 # Scale
-                scaled = np.empty(shape=(int(n_instances), int(intervals[j][1] - intervals[j][0])))
+                #scaled = np.empty(shape=(int(n_instances), intervals[j][1] - intervals[j][0]))
+                scaled = []
+                # too long, returning nans
                 curX = None
                 lenX = None
 
                 lower_interval = int(s * low_diff)
                 upper_interval = int(s / high_diff)
-                if upper_interval == lower_interval:
-                    upper_interval += 1
-                # Swap
-                #if lower_interval > upper_interval:
-                #    temp = upper_interval
-                #    upper_interval = lower_interval
-                #    lower_interval = temp
+
+                if lower_interval > upper_interval:
+                    temp = upper_interval
+                    upper_interval = lower_interval
+                    lower_interval = temp
 
                 for i in range(n_instances):
                     # Append the scaled and sliced result
                     curX = X.iloc[i][0]
                     lenX = len(curX)
+
+
 
                     # Prevent it going over
                     # I think this has stuff to do with the scaling based on longest, if there are intervals that take place
@@ -313,37 +300,46 @@ def _transform(X, intervals, unequal):
                             lower_interval = upper_interval
                             upper_interval = temp
                         diff = upper_interval
-                        upper_interval = int(((lenX * s) / lenX))
+                        upper_interval = int(((lenX * s) / lenX)) - 2
                         diff -= upper_interval
                         lower_interval -= diff
                     if lower_interval < 0:
                         lower_interval = 0
 
-                    for o in range(lower_interval, upper_interval):
-                        #Nans being written?
-                        scaled[i] = (curX[int(o * (lenX / s))])
+                    if (upper_interval == lower_interval or upper_interval == lower_interval + 1) and upper_interval + 2 * (lenX / s) < lenX:
+                        if upper_interval == lower_interval + 1:
+                            upper_interval += 1
+                        else:
+                            upper_interval += 2
+                    elif (upper_interval == lower_interval or upper_interval == lower_interval + 1) and upper_interval + 2 * (lenX / s) > lenX:
+                        lower_interval -= 2
 
-                #Best not being saved
-                ED = sum(pdist(np.array(scaled), 'sqeuclidean'))
-                if ED < best_match_value:
-                    best_match_value = ED
-                    best_X_scale = scaled
+
+
+                    scaled.append([])
+                    for o in range(lower_interval, upper_interval):
+                        scaled[i].append(curX[int(o * (lenX / s))])
+
+
+                scaled = np.array(scaled)
+                try:
+                    ED = sum(pdist(scaled, 'sqeuclidean'))
+                    if ED < best_match_value:
+                        best_match_value = ED
+                        best_X_scale = scaled
+                except:
+                    print("Bad ED")
+
 
             # For some reason best_X_scale isn't set but X_slice is?
             if len(best_X_scale) != 0:
                 X_slice = best_X_scale
-            X_slice = np.array(X_slice)
+            else:
+                X_slice = np.array(X_slice)
         else:
             X_slice = X[:, intervals[j][0] : intervals[j][1]]
 
-        try:
-            means = np.mean(X_slice, axis=1)
-        except:
-            print("test")
-            print("X Slice: ", X_slice)
-            print("Upper: ", upper_interval)
-            print("Lower: ", lower_interval)
-            print("Longest: ", longest_length)
+        means = np.mean(X_slice, axis=1)
         std_dev = np.std(X_slice, axis=1)
         slope = _slope(X_slice, axis=1)
         transformed_x[3 * j] = means
