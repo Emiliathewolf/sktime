@@ -661,13 +661,13 @@ benchmark_datasets = [
 ]
 
 benchmark_datasets = [
-    #"ArrowHead",
-    #"AllGestureWiimoteX",
-    #"AllGestureWiimoteY",
-    #"AllGestureWiimoteZ",
-    #"GestureMidAirD1",
-    #"GestureMidAirD2",
-    #"GestureMidAirD3",
+    "ArrowHead",
+    "AllGestureWiimoteX",
+    "AllGestureWiimoteY",
+    "AllGestureWiimoteZ",
+    "GestureMidAirD1",
+    "GestureMidAirD2",
+    "GestureMidAirD3",
     "GesturePebbleZ1",
     "GesturePebbleZ2",
     "PickupGestureWiimoteZ",

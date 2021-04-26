@@ -89,6 +89,7 @@ class BaseTimeSeriesForest:
         -------
         self : object
         """
+        # Make this only for unequal, but try get around this
         if X.size < self.n_estimators:
             self.n_estimators = X.size
 
@@ -252,30 +253,36 @@ def _transform(X, intervals, unequal):
     for j in range(n_intervals):
         #Please set multicore before you do this, otherwise it will take 2+ minutes
         if unequal == True:
-            best_match_value = float('inf')
-            best_length = None
-
-            #We don't want to waste time checking out all sizes, so set some upper and lower bounds for ourselves
-            min_length = int(intervals[j][1]) # start
-            max_length = int((min_length * 1.1) + 1) # up to 10% over as any higher is unlikely to be good match
 
 
-            #work out ratio here to avoid nabbing the end all the time
             #longest length is
             longest_length = 0
             for i in range(X.size):
                 if X.iloc[i][0].size > longest_length:
                     longest_length = X.iloc[i][0].size
 
+            #We don't want to waste time checking out all sizes, so set some upper and lower bounds for ourselves
+            min_length = int(intervals[j][1]) # start
+            if min_length > longest_length:
+                min_length = int(longest_length * 0.9)
+            max_length = int((min_length * 1.1) + 1) # up to 10% over as any higher is unlikely to be good match
+
+
             #ratio working out
             low_diff = intervals[j][0] / longest_length
+            high_diff = longest_length / intervals[j][1]
+            # Compress interval down so it doesn't go above longest
+            if high_diff < 1:
+                diff = 1 - high_diff
+                high_diff = 1
+                if (low_diff - diff) > 0:
+                    low_diff -= diff
+                else:
+                    low_diff = 0.1
+            #cap highets at one
 
             best_X_scale = []
-
-
-            # LB_Keogh = sqrt(sum([[Q > U].* [Q-U]; [Q < L].* [L-Q]].^2));
-            #C = X
-            # n query length, m candidate length
+            best_match_value = float('inf')
 
             # We want the scale length to be greater than the min length to ensure we're not always picking the end
             for s in range(min_length, int(min_length + 1)):
@@ -285,24 +292,52 @@ def _transform(X, intervals, unequal):
                 lenX = None
 
                 lower_interval = int(s * low_diff)
-                upper_interval = int(lower_interval + (intervals[j][1] - intervals[j][0]))
-                # As we don't scale the interval size itself, sometimes it may run over
-                if upper_interval > longest_length:
-                    upper_interval = upper_interval - (upper_interval - longest_length) - 1
-                    lower_interval = lower_interval - (upper_interval - longest_length) - 1
+                upper_interval = int(s / high_diff)
+                if upper_interval == lower_interval:
+                    upper_interval += 1
+                # Swap
+                #if lower_interval > upper_interval:
+                #    temp = upper_interval
+                #    upper_interval = lower_interval
+                #    lower_interval = temp
+
                 for i in range(n_instances):
                     # Append the scaled and sliced result
                     curX = X.iloc[i][0]
                     lenX = len(curX)
+
+                    # Prevent it going over
+                    # I think this has stuff to do with the scaling based on longest, if there are intervals that take place
+                    # Above the longest it will flip lower and upper
+                    if upper_interval * (lenX / s) > lenX:
+                        #print("\nScale upper")
+                        #print("vals: ", upper_interval * (lenX / s), " lenX: ", lenX)
+                        #print("Upper before: ", upper_interval)
+                        #print("Lower: ", lower_interval)
+                        if lower_interval > upper_interval:
+                            temp = lower_interval
+                            lower_interval = upper_interval
+                            upper_interval = temp
+                        diff = upper_interval
+                        upper_interval = int(((lenX * s) / lenX))
+                        diff -= upper_interval
+                        lower_interval -= diff
+                    if lower_interval < 0:
+                        lower_interval = 0
+
                     for o in range(lower_interval, upper_interval):
+                        #Nans being written?
                         scaled[i] = (curX[int(o * (lenX / s))])
 
+                #Best not being saved
                 ED = sum(pdist(np.array(scaled), 'sqeuclidean'))
                 if ED < best_match_value:
                     best_match_value = ED
                     best_X_scale = scaled
 
-            X_slice = best_X_scale
+            # For some reason best_X_scale isn't set but X_slice is?
+            if len(best_X_scale) != 0:
+                X_slice = best_X_scale
             X_slice = np.array(X_slice)
         else:
             X_slice = X[:, intervals[j][0] : intervals[j][1]]
@@ -311,6 +346,10 @@ def _transform(X, intervals, unequal):
             means = np.mean(X_slice, axis=1)
         except:
             print("test")
+            print("X Slice: ", X_slice)
+            print("Upper: ", upper_interval)
+            print("Lower: ", lower_interval)
+            print("Longest: ", longest_length)
         std_dev = np.std(X_slice, axis=1)
         slope = _slope(X_slice, axis=1)
         transformed_x[3 * j] = means
