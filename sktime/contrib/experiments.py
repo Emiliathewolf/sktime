@@ -259,6 +259,85 @@ def compare_scaling(query, min = None, max = None):
         ret.append([best_match[i]])
     return pd.DataFrame(ret)
 
+def pad_zero(query, direction, scale_size = None):
+    #Set size if needed
+    if scale_size == None:
+        max = 0
+        for i in range(query.size):
+            if query.iloc[i][0].size > max:
+                max = query.iloc[i][0].size
+        scale_size = max
+    else:
+        for i in range(query.size):
+            if query.iloc[i][0].size > scale_size:
+                #This can't scale down
+                raise ValueError("Scale size must be greater than the longest series")
+
+    #Scale needed values
+    scaled = []
+    for i in range(query.size):
+        curQ = query.iloc[i][0].tolist()
+        length = query.iloc[i][0].size
+        for j in range(scale_size - length):
+            try:
+                if direction == 'prefix':
+                    # Insert 0 at pos 0
+                    curQ.insert(0,0)
+                elif direction == 'suffix':
+                    curQ.append(0)
+            except Exception as e:
+                print(e)
+        scaled.append(pd.Series(curQ))
+
+    #Reshuffle so it fits the required structure
+    ret = []
+    for i in range(query.size):
+        ret.append([scaled[i]])
+    return pd.DataFrame(ret)
+
+def pad_noise(query, direction, scale_size = None):
+    #Set size if needed
+    if scale_size == None:
+        max = 0
+        for i in range(query.size):
+            if query.iloc[i][0].size > max:
+                max = query.iloc[i][0].size
+        scale_size = max
+    else:
+        for i in range(query.size):
+            if query.iloc[i][0].size > scale_size:
+                #This can't scale down
+                raise ValueError("Scale size must be greater than the longest series")
+
+    #Scale needed values
+    scaled = []
+    for i in range(query.size):
+        curQ = query.iloc[i][0].tolist()
+        length = query.iloc[i][0].size
+
+        # get np mean, np std
+        mean = np.mean(curQ)
+        std = np.std(curQ)
+        noise = np.random.normal(mean, std, scale_size - length)
+        noise = noise.tolist()
+        noise = list(map(abs, noise))
+        for j in range(scale_size - length):
+            try:
+                if direction == 'prefix':
+                    # Insert 0 at pos 0
+                    curQ.insert(0, noise[j])
+                elif direction == 'suffix':
+                    curQ.append(noise[j])
+            except Exception as e:
+                print(e)
+        scaled.append(pd.Series(curQ))
+
+    #Reshuffle so it fits the required structure
+    ret = []
+    for i in range(query.size):
+        ret.append([scaled[i]])
+    return pd.DataFrame(ret)
+
 def run_experiment(
     problem_path,
     results_path,
@@ -337,9 +416,37 @@ def run_experiment(
     testX, testY = load_ts(problem_path + dataset + "/" + dataset + "_TEST" + format)
 
     #Uniform scaling
-    trainX = compare_scaling(trainX,100,102)
-    testX = compare_scaling(testX,100,102)
+    #equal check, slows everything down a fair bit
 
+    # Find max length
+    max = 0
+    for i in range(trainX.size):
+        if trainX.iloc[i][0].size > max:
+            max = trainX.iloc[i][0].size
+    for i in range(testX.size):
+        if testX.iloc[i][0].size > max:
+            max = testX.iloc[i][0].size
+
+    method = "noise"
+    for i in range(trainX.size):
+        size = trainX.iloc[0][0].size
+        if trainX.iloc[i][0].size != size:
+            if method == "us":
+                trainX = compare_scaling(trainX,100,101)
+                #Make sure testX same length as trainX
+                testX = compare_scaling(testX,100,101)
+                break
+            #ALl paddings will require the scale size to be as long as the lonegst value in trainX or testX
+            elif method == "zero":
+                type = "prefix" # Either prefix or suffix
+                trainX = pad_zero(trainX,type,max)
+                testX = pad_zero(testX,type,max)
+                break
+            elif method == "noise":
+                type = "suffix" # Either prefix or suffix
+                trainX = pad_noise(trainX,type,max)
+                testX = pad_noise(testX,type,max)
+                break
 
     if resampleID != 0:
         # allLabels = np.concatenate((trainY, testY), axis = None)
@@ -713,10 +820,20 @@ benchmark_datasets = [
     "Worms",
     "WormsTwoClass",
     "Yoga",
+    "AllGestureWiimoteX",
+    "AllGestureWiimoteY",
+    "AllGestureWiimoteZ",
+    "GestureMidAirD1",
+    "GestureMidAirD2",
+    "GestureMidAirD3",
+    "GesturePebbleZ1",
+    "GesturePebbleZ2",
+    "PickupGestureWiimoteZ",
+    "PLAID",
+    "ShakeGestureWiimoteZ",
 ]
 
 benchmark_datasets = [
-    #"ArrowHead",
     "AllGestureWiimoteX",
     "AllGestureWiimoteY",
     "AllGestureWiimoteZ",
@@ -759,7 +876,7 @@ if __name__ == "__main__":
         #Download datasets
         #for datasets in benchmark_datasets:
         #    print(datasets)
-        #     load_UCR_UEA_dataset(datasets)
+        #    load_UCR_UEA_dataset(datasets)
         trainX, trainY = load_ts(data_dir + dataset + "/" + dataset + "_TRAIN.ts")
         testX, testY = load_ts(data_dir + dataset + "/" + dataset + "_TEST.ts")
         adjusted = trainX.values.tolist()
