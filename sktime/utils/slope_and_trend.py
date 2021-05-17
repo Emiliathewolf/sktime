@@ -78,6 +78,7 @@ def _slope(y, axis=0):
     x_mean = x.mean()
 
     # Compute slope along given axis
+
     return (np.mean(y * x, axis=axis) - x_mean * np.mean(y, axis=axis)) / (
         (x * x).mean() - x_mean ** 2
-    )
+)

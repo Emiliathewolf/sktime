@@ -40,6 +40,11 @@ from sktime.classification.interval_based._drcif import DrCIF
 from sktime.classification.shapelet_based import MrSEQLClassifier, ROCKETClassifier
 from sktime.classification.shapelet_based import ShapeletTransformClassifier
 
+from sktime.contrib.scaling import (
+    compare_scaling,
+    pad_zero,
+    pad_noise
+)
 
 os.environ["MKL_NUM_THREADS"] = "1"  # must be done before numpy import!!
 os.environ["NUMEXPR_NUM_THREADS"] = "1"  # must be done before numpy import!!
@@ -58,9 +63,7 @@ from sktime.utils.data_io import load_from_tsfile_to_dataframe as load_ts
 import sktime.datasets.tsc_dataset_names as dataset_lists
 from sktime.datasets.base import load_UCR_UEA_dataset
 
-from scipy.spatial.distance import pdist
-
-__author__ = ["Tony Bagnall"]
+__author__ = ["Tony Bagnall", "Emilia Rose"]
 
 """ Prototype mechanism for testing classifiers on the UCR format. This mirrors the
 mechanism used in Java,
@@ -210,134 +213,6 @@ def stratified_resample(X_train, y_train, X_test, y_test, random_state):
     return X_train, y_train, X_test, y_test
 
 
-def us(query, p):
-    n = query.size
-    QP = np.empty(shape=(n, p))
-    # p / n = scaling factor
-    for i in range(n):
-        curQ = query.iloc[i][0]
-        for j in range(p):
-            try:
-                QP[i][j] = (curQ[int(j * (len(curQ) / p))])
-            except Exception as e:
-                print(e)
-    return QP
-
-# Yes I know sklearn has th
-# is, no I don't care
-def euclidian_distances(q):
-    ED = sum(pdist(np.array(q), 'sqeuclidean'))
-    return ED
-
-def compare_scaling(query, min = None, max = None):
-    best_match_value = float('inf')
-    best_match = None
-
-    if max == None:
-        max = 0
-        for i in range(query.size):
-            if query.iloc[i][0].size > max:
-                max = query.iloc[i][0].size
-
-    if min == None:
-        min = 0
-        for i in range(query.size):
-            if query.iloc[i][0].size < min:
-                min = query.iloc[i][0].size
-    n = min
-    m = max
-    #Parallel probs best
-    for p in range(n, m):
-        QP = us(query, p)
-        dist = euclidian_distances(QP)  # Compare like sizes
-        if dist < best_match_value:
-            best_match_value = dist
-            best_match = QP
-    #Reshuffle so it fits the required structure
-    ret = []
-    for i in range(query.size):
-        ret.append([best_match[i]])
-    return pd.DataFrame(ret)
-
-def pad_zero(query, direction, scale_size = None):
-    #Set size if needed
-    if scale_size == None:
-        max = 0
-        for i in range(query.size):
-            if query.iloc[i][0].size > max:
-                max = query.iloc[i][0].size
-        scale_size = max
-    else:
-        for i in range(query.size):
-            if query.iloc[i][0].size > scale_size:
-                #This can't scale down
-                raise ValueError("Scale size must be greater than the longest series")
-
-    #Scale needed values
-    scaled = []
-    for i in range(query.size):
-        curQ = query.iloc[i][0].tolist()
-        length = query.iloc[i][0].size
-        for j in range(scale_size - length):
-            try:
-                if direction == 'prefix':
-                    # Insert 0 at pos 0
-                    curQ.insert(0,0)
-                elif direction == 'suffix':
-                    curQ.append(0)
-            except Exception as e:
-                print(e)
-        scaled.append(pd.Series(curQ))
-
-    #Reshuffle so it fits the required structure
-    ret = []
-    for i in range(query.size):
-        ret.append([scaled[i]])
-    return pd.DataFrame(ret)
-
-def pad_noise(query, direction, scale_size = None):
-    #Set size if needed
-    if scale_size == None:
-        max = 0
-        for i in range(query.size):
-            if query.iloc[i][0].size > max:
-                max = query.iloc[i][0].size
-        scale_size = max
-    else:
-        for i in range(query.size):
-            if query.iloc[i][0].size > scale_size:
-                #This can't scale down
-                raise ValueError("Scale size must be greater than the longest series")
-
-    #Scale needed values
-    scaled = []
-    for i in range(query.size):
-        curQ = query.iloc[i][0].tolist()
-        length = query.iloc[i][0].size
-
-        # get np mean, np std
-        mean = np.mean(curQ)
-        std = np.std(curQ)
-        noise = np.random.normal(mean, std, scale_size - length)
-        noise = noise.tolist()
-        noise = list(map(abs, noise))
-        for j in range(scale_size - length):
-            try:
-                if direction == 'prefix':
-                    # Insert 0 at pos 0
-                    curQ.insert(0, noise[j])
-                elif direction == 'suffix':
-                    curQ.append(noise[j])
-            except Exception as e:
-                print(e)
-        scaled.append(pd.Series(curQ))
-
-    #Reshuffle so it fits the required structure
-    ret = []
-    for i in range(query.size):
-        ret.append([scaled[i]])
-    return pd.DataFrame(ret)
-
 def run_experiment(
     problem_path,
     results_path,
@@ -415,9 +290,6 @@ def run_experiment(
     trainX, trainY = load_ts(problem_path + dataset + "/" + dataset + "_TRAIN" + format)
     testX, testY = load_ts(problem_path + dataset + "/" + dataset + "_TEST" + format)
 
-    #Uniform scaling
-    #equal check, slows everything down a fair bit
-
     # Find max length
     max = 0
     for i in range(trainX.size):
@@ -430,6 +302,7 @@ def run_experiment(
     method = "noise"
     for i in range(trainX.size):
         size = trainX.iloc[0][0].size
+        #Check to see if its unequal
         if trainX.iloc[i][0].size != size:
             if method == "us":
                 trainX = compare_scaling(trainX,100,101)
@@ -833,7 +706,7 @@ benchmark_datasets = [
     "ShakeGestureWiimoteZ",
 ]
 
-benchmark_datasets = [
+unequal_benchmark_datasets = [
     "AllGestureWiimoteX",
     "AllGestureWiimoteY",
     "AllGestureWiimoteZ",
@@ -881,8 +754,7 @@ if __name__ == "__main__":
         testX, testY = load_ts(data_dir + dataset + "/" + dataset + "_TEST.ts")
         adjusted = trainX.values.tolist()
         # X is an 2d array where each 1st level array represents a row in the .ts file
-        #print(adjusted)
-        #exit()
+
         classifier = "tsf"
         resample = 0
         #         for i in range(0, len(univariate_datasets)):
